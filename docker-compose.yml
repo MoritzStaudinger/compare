@@ -30,3 +30,49 @@ services:
       - BACKEND_URL=http://backend:8000
     depends_on:
       - backend
+
+  nginx:
+    image: nginx:latest
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      #- certbot-etc:/etc/letsencrypt
+      #- certbot-var:/var/lib/letsencrypt
+      #- ./nginx/html:/var/www/certbot
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - frontend
+      - backend
+
+  #certbot:
+  #  image: certbot/certbot
+  #  volumes:
+  #    - certbot-etc:/etc/letsencrypt
+  #    - certbot-var:/var/lib/letsencrypt
+  #    - ./nginx/html:/var/www/certbot
+  #  entrypoint: >
+  #    sh -c "certbot certonly --webroot
+  #    --webroot-path=/var/www/certbot
+  #    --email your-email@example.com
+  #    --agree-tos
+  #    --no-eff-email
+  #    -d compare.ds-ifs.tuwien.ac.at -d www.compare.ds-ifs.tuwien.ac.at"
+
+ # certbot-renew:
+ #   image: certbot/certbot
+ #   volumes:
+ #     - certbot-etc:/etc/letsencrypt
+ #     - certbot-var:/var/lib/letsencrypt
+ #     - ./nginx/html:/var/www/certbot
+ #   entrypoint: >
+ #     sh -c "trap exit TERM; while :; do
+ #     certbot renew --webroot --webroot-path=/var/www/certbot &&
+ #     nginx -s reload;
+ #     sleep 12h & wait $${!};
+ #     done"
+
+
+volumes:
+  certbot-etc:
+  certbot-var:
