@@ -27,18 +27,24 @@ def get_most_relevant_institutions_for_query(query, year_start=None, year_end=No
     if country_code:
         works_query = works_query.filter(institutions={"country_code": country_code.upper()})
 
+    def is_in_country(ror_id, target_code):
+        _, inst = Institutions().get(ror_id)  # Unpack status code and response
+        return inst.get('country_code', '').upper() == target_code.upper()
+
+
+
     # Group by institution ROR ID and retrieve results
     grouped_results = works_query.group_by("institutions.ror").get()
+    filtered_grouped_results = [res for res in grouped_results if is_in_country(res['key'], country_code)]
 
     # Limit the number of institutions returned
-    return grouped_results[:limit]
+    return filtered_grouped_results[:limit]
 
-def get_most_relevant_institutions_for_queries(queries, year_start=None, year_end=None, country_code=None, limit=10):
+def get_most_relevant_institutions_for_queries(queries, year_start=None, year_end=None, country_code=None, limit=10, filter_institution=None):
     from_date = f"{year_start}-01-01" if year_start else "1970-01-01"
     to_date = f"{year_end}-12-31" if year_end else "2025-12-31"
 
     institution_counts = {}
-
     for query in queries:
         works_query = Works().search(query).filter(
             is_oa=True,
@@ -51,7 +57,19 @@ def get_most_relevant_institutions_for_queries(queries, year_start=None, year_en
         if country_code:
             works_query = works_query.filter(institutions={"country_code": country_code.upper()})
 
-        grouped_results = works_query.group_by("institutions.ror").get()
+        # Group by institution ROR ID and retrieve results
+        grouped_results = works_query.group_by("institutions.ror").get()[:limit*2]
+        # Optional post-filtering by country (if not reliably handled server-side)
+        if country_code:
+            def is_in_country(ror_id, target_code):
+                _, inst = Institutions().get(ror_id)  # Unpack status code and response
+                return inst.get('country_code', '').upper() == target_code.upper()
+
+            grouped_results = [res for res in grouped_results if is_in_country(res['key'], country_code)]
+
+        # Optional filtering by specific institution ROR ID
+        if filter_institution:
+            grouped_results = [res for res in grouped_results if res['key'] != filter_institution]
 
         for result in grouped_results:
             ror_id = result['key']
@@ -60,6 +78,10 @@ def get_most_relevant_institutions_for_queries(queries, year_start=None, year_en
 
     # Sort by count descending and return top results
     sorted_results = sorted(institution_counts.items(), key=lambda x: x[1], reverse=True)
+    print(sorted_results[:limit])
+    return sorted_results[:limit]
+
+
     return sorted_results[:limit]
 
 def structure_data(data):
@@ -147,11 +169,15 @@ def get_ror_id(university_name):
         results = Institutions().search(university_name).get()
 
         # Iterate through the results to find the best match
-        for institution in results:
-            display_name = institution.get("display_name", "").lower()
-            if university_name.lower() in display_name:
-                return institution.get("ror")
-        return None
+        #for institution in results:
+        #    display_name = institution.get("display_name", "").lower()
+        #    if university_name.lower() in display_name:
+        #        return institution.get("ror")
+        #return None
+        print(f"Found {len(results)} institutions matching '{university_name}'")
+        for r in results:
+            print(f" - {r.get('display_name')} ({r.get('ror')})")
+        return results[0].get("ror") if results else None
     except Exception as e:
         print(f"An error occurred: {e}")
         return None

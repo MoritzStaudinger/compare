@@ -4,13 +4,13 @@ import pandas as pd
 import streamlit as st
 import requests
 import altair as alt
+import json
 import fitz  # PyMuPDF
 
 st.set_page_config(layout="wide")
 
 with st.sidebar:
-    st.title("📘 Description")
-
+    st.title("\U0001F4D8 Description")
     st.markdown("""
 This website helps **automatically compare research papers and universities** based on your query and optionally a PDF upload.
 
@@ -72,23 +72,71 @@ The app uses different data depending on the classification:
 🔁 The system uses caching to avoid recomputation. You can always resubmit without cache if needed.
 """)
 
-
 st.title("Compare Research Papers and Institutions")
 
-# --- Request Handler ---
-def submit_request(prompt, model, pdf_file, no_cache=False):
-    files = {"pdf_file": (pdf_file.name, pdf_file, "application/pdf")} if pdf_file else {}
 
+def show_recent_queries():
+    with st.expander("🕘 Recent Queries (click to expand)", expanded=False):
+        try:
+            response = requests.get("http://localhost:8000/api/recent_caches")
+            if response.status_code == 200:
+                entries = response.json()
+                if entries:
+                    for i, item in enumerate(entries):
+                        col1, col2 = st.columns([6, 1])
+                        with col1:
+                            st.markdown(f"**{item['prompt'][:80]}...**  \n_Model:_ `{item['model']}`")
+                        with col2:
+                            if st.button("Use", key=f"use_prompt_{i}"):
+                                st.session_state["prompt"] = item["prompt"]
+                                st.session_state["model"] = item["model"]
+                                st.rerun()
+                else:
+                    st.info("No recent cache entries found.")
+            else:
+                st.warning("Could not load recent prompts.")
+        except Exception as e:
+            st.error(f"Failed to load cache history: {e}")
+
+
+# --- Stream Backend ---
+def stream_backend(prompt, model, pdf_file, no_cache=False):
+    files = {"pdf_file": (pdf_file.name, pdf_file, "application/pdf")} if pdf_file else {}
     data = {
         "prompt": prompt,
         "online": "true",
         "model": model,
         "no_cache": str(no_cache).lower(),
     }
-    response = requests.post("http://backend:8000/api/process_input", files=files, data=data)
-    #response = requests.post("http://localhost:8000/api/process_input", files=files, data=data)
-    return response
 
+    response = requests.post(
+        "http://localhost:8000/api/process_input_stream",
+        files=files,
+        data=data,
+        stream=True,
+        headers={"Accept": "text/event-stream"}
+    )
+
+    final_result = {}
+    for line in response.iter_lines(decode_unicode=True):
+        if line and line.startswith("data:"):
+            raw = line.removeprefix("data:").strip()
+            try:
+                parsed = json.loads(raw)
+                for key in ["update", "summary", "cached", "profiles", "input"]:
+                    if key in parsed:
+                        if key == "update":
+                            yield {"type": "update", "message": parsed["update"]}
+                        elif key == "cached":
+                            final_result["summary"] = parsed["summary"]
+                            final_result["cache_timestamp"] = parsed.get("cache_timestamp", "now")
+                        else:
+                            final_result[key] = parsed[key]
+            except json.JSONDecodeError:
+                yield {"type": "error", "message": raw}
+
+    if final_result:
+        yield {"type": "final", "result": final_result}
 
 # --- UI Elements ---
 col1, col2, col3 = st.columns([3, 1, 1])
@@ -105,71 +153,77 @@ with col2:
 with col3:
     pdf_file = st.file_uploader("Upload a PDF", type="pdf")
 
-with st.expander("🕘 Recent Queries (click to expand)", expanded=False):
-    try:
-        recent_response = requests.get("http://backend:8000/api/recent_caches")
-        #recent_response = requests.get("http://localhost:8000/api/recent_caches")
-        if recent_response.status_code == 200:
-            recent_prompts = recent_response.json()
-            if recent_prompts:
-                for i, item in enumerate(recent_prompts):
-                    col1, col2 = st.columns([6, 1])
-                    with col1:
-                        st.markdown(f"**{item['prompt'][:80]}...**  \n_Model:_ `{item['model']}`")
-                    with col2:
-                        if st.button("Use", key=f"use_prompt_{i}"):
-                            st.session_state["prompt"] = item["prompt"]
-                            st.session_state["model"] = item["model"]
-                            st.rerun()
-            else:
-                st.info("No recent cache entries found.")
-        else:
-            st.warning("Could not load recent prompts.")
-    except Exception as e:
-        st.error(f"Failed to load cache history: {e}")
 
+show_recent_queries()
 
-# --- Button Handling ---
-submit_clicked = st.button("Submit")
-resubmit_clicked = False
+# --- Buttons ---
+submit_clicked = st.button("Submit", key="submit_button")
+resubmit_clicked = False  # Default
 
+# If last result was from cache, offer resubmit button
+if "last_result" in st.session_state:
+    result = st.session_state["last_result"]
+    if result.get("cache_timestamp"):
+        with st.container():
+            st.warning(f"⚠ Results are cached and may not reflect the latest data. "
+                       f"Cache timestamp: {result['cache_timestamp']}")
+            if st.button("🔄 Resubmit without cache", key="resubmit_button"):
+                st.session_state["resubmit_no_cache"] = True
+                st.rerun()
+
+# Handle resubmit state
+if st.session_state.get("resubmit_no_cache"):
+    no_cache = True
+    resubmit_clicked = True
+    st.session_state.pop("resubmit_no_cache")
+else:
+    no_cache = False
+
+# --- Process Streamed Submission ---
 if submit_clicked or resubmit_clicked:
     if not prompt:
         st.warning("Please enter a prompt.")
         st.stop()
-    else:
-        no_cache = resubmit_clicked
-        response = submit_request(prompt, model, pdf_file, no_cache=no_cache)
 
-        if response.status_code == 200:
-            result = response.json()
-            st.session_state.last_result = result
-        else:
-            st.error(f"Error {response.status_code}: {response.text}")
-            st.stop()
+    st.session_state.pop("last_result", None)
+    stream_container = st.empty()
+    step_messages = []
+
+    with st.spinner("Processing..."):
+        for event in stream_backend(prompt, model, pdf_file, no_cache=no_cache):
+            if event["type"] == "update":
+                step_messages.append(event["message"])
+                with stream_container.container():
+                    with st.expander("🛠 Processing Steps", expanded=True):
+                        for msg in step_messages:
+                            st.markdown(f"🟡 {msg}")
+            elif event["type"] == "error":
+                st.error(f"🔴 Error parsing message: {event['message']}")
+            elif event["type"] == "final":
+                st.session_state["last_result"] = event["result"]
+
+    if step_messages:
+        with stream_container.container():
+            with st.expander("🛠 Processing Steps", expanded=False):
+                for msg in step_messages:
+                    st.markdown(f"🟢 {msg}")
 
 # --- Show Results ---
 if "last_result" in st.session_state:
     result = st.session_state.last_result
+    print(result)
+    resubmit_clicked = False  # initialize it
 
     if result.get("cache_timestamp"):
-        # Display cache warning and inline button
         with st.container():
-            st.warning(f"Results are cached and may not reflect the latest data. "
+            st.warning(f"⚠️ Results are cached and may not reflect the latest data. "
                        f"Cache timestamp: {result['cache_timestamp']}")
             if st.button("🔄 Resubmit without cache", key="resubmit_button"):
-                response = submit_request(prompt, model, pdf_file, no_cache=True)
-                if response.status_code == 200:
-                    result = response.json()
-                    st.session_state.last_result = result
-                else:
-                    st.error(f"Error {response.status_code}: {response.text}")
-                    st.stop()
+                resubmit_clicked = True
 
     st.markdown("### Response")
     st.write(result["summary"])
-
-    if result['profiles']:
+    if result.get('profiles'):
         profiles = result['profiles']
         num_profiles = len(profiles)
         cols = st.columns(num_profiles)
@@ -325,8 +379,8 @@ if "last_result" in st.session_state:
             }
 
             try:
-                feedback_response = requests.post("http://backend:8000/api/feedback", json=feedback_payload)
-                #feedback_response = requests.post("http://localhost:8000/api/feedback", json=feedback_payload)
+                #feedback_response = requests.post("http://backend:8000/api/feedback", json=feedback_payload)
+                feedback_response = requests.post("http://localhost:8000/api/feedback", json=feedback_payload)
                 if feedback_response.status_code == 200:
                     st.success("Thank you! Your feedback was saved.")
                 else:

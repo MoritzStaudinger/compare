@@ -165,7 +165,7 @@ def paper_answer(prompt, paper):
     return answer_response
 
 
-def institutional_summary(summaries, institution):
+def institutional_summary(summaries, institution, prompt=None):
     # summaries = data.get("institutional_summary", [])
     print(institution)
     if not summaries:
@@ -182,16 +182,25 @@ def institutional_summary(summaries, institution):
         else f"[{institution}_{s['index']}] {s['title']} by {s['authors']} (DOI unavailable)"
         for s in summaries
     )
-
-    # Step 3: Construct prompt
-    institutional_summary = (
-        f"{comparison_context}"
-        f"Write an overview of the contributions of {institution}, based on the given works above. "
-        "Do not use any additional knowledge, and only use the information provided above. "
-        f"Use inline citations like [{institution}_1], [{institution}_2], etc., to refer to them. "
-        f"After the paragraph, list the full references you used with the same inline citation style [{institution}_1], authors and DOIs.\n\n"
-        f"{references}"
-    )
+    if prompt:
+        institutional_summary = (
+            f"{comparison_context}"
+            f"Write an overview of the contributions of {institution}, based on the given works above and the given user question:"
+            f"User question: {prompt}"            
+            "Do not use any additional knowledge, and only use the information provided above. "
+            f"Use inline citations like [{institution}_1], [{institution}_2], etc., to refer to them. "
+            f"After the paragraph, list the full references you used with the same inline citation style [{institution}_1], authors and DOIs.\n\n"
+            f"{references}"
+        )
+    else:
+        institutional_summary = (
+            f"{comparison_context}"
+            f"Write an overview of the contributions of {institution}, based on the given works above. "
+            "Do not use any additional knowledge, and only use the information provided above. "
+            f"Use inline citations like [{institution}_1], [{institution}_2], etc., to refer to them. "
+            f"After the paragraph, list the full references you used with the same inline citation style [{institution}_1], authors and DOIs.\n\n"
+            f"{references}"
+        )
 
     # Step 4: Get LLM response
     institutional_response = Settings.llm.complete(institutional_summary).text.strip()
@@ -303,7 +312,7 @@ def summarize(documents):
 
 from collections import defaultdict, Counter
 
-def extract_top_universities(docs, query, exclude=None, current_year=2025, top_k_institutions=3, top_docs_per_inst=15):
+def extract_top_universities(docs, query, exclude=None, current_year=2025, top_k_institutions=3, top_docs_per_inst=15, country_code = None):
     """
     Analyze retrieved documents and extract top contributing universities.
 
@@ -320,12 +329,6 @@ def extract_top_universities(docs, query, exclude=None, current_year=2025, top_k
     cutoff_year = current_year - 5
 
     # Step 1: Filter relevant documents
-    def is_relevant(doc):
-        text = doc.text.lower()
-        return "natural language" in text or "language" in text
-        # Optionally re-enable this if year metadata is fixed:
-        # year = int(doc.metadata.get("publication_year", 0))
-        # return ("natural language" in text or "language" in text) and year >= cutoff_year
 
     filtered_docs = docs #[doc for doc in docs if is_relevant(doc)]
 
@@ -333,14 +336,15 @@ def extract_top_universities(docs, query, exclude=None, current_year=2025, top_k
     institution_counter = Counter()
     inst_to_docs = defaultdict(list)
 
+    exclude_set = set([exclude]) if isinstance(exclude, str) else set(exclude or [])
+    print(docs[0].metadata)
     for doc in filtered_docs:
         institutions = doc.metadata.get("affiliations", [])
         for inst in institutions:
             inst_s = inst.strip()
-            if exclude and exclude != inst_s:
+            if inst_s not in exclude_set:
                 institution_counter[inst_s] += 1
                 inst_to_docs[inst_s].append(doc)
-
     top_institutions = [inst for inst, _ in institution_counter.most_common(top_k_institutions)]
     print(top_institutions)
 
