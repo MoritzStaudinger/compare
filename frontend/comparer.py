@@ -85,8 +85,8 @@ def submit_request(prompt, model, pdf_file, no_cache=False):
         "model": model,
         "no_cache": str(no_cache).lower(),
     }
-    #response = requests.post("http://backend:8000/api/process_input", files=files, data=data)
-    response = requests.post("http://localhost:8000/api/process_input", files=files, data=data)
+    response = requests.post("http://backend:8000/api/process_input", files=files, data=data)
+    #response = requests.post("http://localhost:8000/api/process_input", files=files, data=data)
     return response
 
 
@@ -107,8 +107,8 @@ with col3:
 
 with st.expander("🕘 Recent Queries (click to expand)", expanded=False):
     try:
-        #recent_response = requests.get("http://backend:8000/api/recent_caches")
-        recent_response = requests.get("http://localhost:8000/api/recent_caches")
+        recent_response = requests.get("http://backend:8000/api/recent_caches")
+        #recent_response = requests.get("http://localhost:8000/api/recent_caches")
         if recent_response.status_code == 200:
             recent_prompts = recent_response.json()
             if recent_prompts:
@@ -325,8 +325,8 @@ if "last_result" in st.session_state:
             }
 
             try:
-                #feedback_response = requests.post("http://backend:8000/api/feedback", json=feedback_payload)
-                feedback_response = requests.post("http://localhost:8000/api/feedback", json=feedback_payload)
+                feedback_response = requests.post("http://backend:8000/api/feedback", json=feedback_payload)
+                #feedback_response = requests.post("http://localhost:8000/api/feedback", json=feedback_payload)
                 if feedback_response.status_code == 200:
                     st.success("Thank you! Your feedback was saved.")
                 else:
