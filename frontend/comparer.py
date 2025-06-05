@@ -215,7 +215,13 @@ if "last_result" in st.session_state:
                 st.markdown("###### Publications per Year")
                 st.markdown(f"**Period:** {period}")
 
-                full_years = list(range(year_start, year_end + 1))
+                if year_start and year_end:
+                    year_start = int(year_start)
+                    year_end = int(year_end)
+                    full_years = list(range(year_start, year_end + 1))
+                else:
+                    full_years = []
+                #full_years = list(range(year_start, year_end + 1))
 
                 # Convert pubs_per_year dict to DataFrame
                 df = pd.DataFrame(list(pubs_per_year.items()), columns=['Year', 'Publications'])
