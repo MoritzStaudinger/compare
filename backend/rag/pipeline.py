@@ -141,7 +141,7 @@ def process_input_streaming(prompt, paper=None, online=False, model="gpt-4o-mini
     yield from emit(f"Detected query type: {data_type}")
 
     if data_type == "single_university":
-        yield from handle_single_university_wrapper(data, prompt, online=online, stream=True, stream_fn=stream_fn)
+        yield from handle_single_university_wrapper(data, prompt, online=online, model=model, stream=True, stream_fn=stream_fn)
 
     elif data_type == "university":
         yield from handle_university_wrapper(data, prompt, online=online, model=model, stream=True, stream_fn=stream_fn)
