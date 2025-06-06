@@ -198,116 +198,94 @@ def handle_university(data, prompt, online=False, model="gpt-4o-mini", stream_fn
 
     queries = data["queries"]
     profiles = []
-    single_university_docs_ml = []
-    total_papers_indexed = 0
-    total_retrieved_docs = 0
 
     if not online:
-        yield from emit("Retrieving documents for all queries (offline mode).")
+        yield from emit("📄 Retrieving documents (offline mode)...")
         all_results = [
             retrieve(query, top_k=1000, year_start=data['year_start'], year_end=data['year_end'],
                      country=data['country']) for query in queries
         ]
-        all_docs = [item for sublist in all_results for item in sublist]
-        all_docs = remove_duplicates_by_doi(all_docs)
-        total_retrieved_docs = len(all_docs)
-        yield from emit(f"Retrieved {total_retrieved_docs} documents across {len(queries)} queries (offline mode).")
+        docs = [item for sublist in all_results for item in sublist]
+        docs = remove_duplicates_by_doi(docs)
 
-        yield from emit("Retrieving top-k documents for the target university.")
+        yield from emit("📑 Getting top documents for the university...")
         single_university_docs_ml = [
             retrieve(query, institution=data['university_name'], top_k=15,
                      year_start=data['year_start'], year_end=data['year_end']) for query in queries
         ]
 
-        yield from emit("Identifying top comparison universities.")
-        top_universities = extract_top_universities(all_docs, query=prompt, exclude=data['university_name'])
+        yield from emit("🏫 Extracting top universities...")
+        top_universities = extract_top_universities(docs, query=prompt, exclude=data['university_name'])
 
     else:
-        yield from emit("Getting ROR ID for the university.")
+        yield from emit("🔍 Getting ROR ID and profile...")
         ror_id = get_ror_id(data['university_name'])
-
-        yield from emit("Finding most relevant institutions for comparison.")
+        yield from emit("🌍 Finding relevant institutions...")
         most_relevant_institutions = get_most_relevant_institutions_for_queries(
             queries, year_start=data['year_start'], year_end=data['year_end'],
-            country_code=data['country'], limit=3
-        )
-
-        yield from emit("Creating research profile for target university.")
+            country_code=data['country'], limit=3)
+        yield from emit("Create Research Profile")
         profile = get_institution_profile(data['topic'], ror_id, queries=queries,
                                           year_start=data['year_start'], year_end=data['year_end'])
         profiles.append(profile)
 
-        yield from emit("Collecting and indexing papers.")
+        yield from emit("📄 Searching and indexing papers...")
         paper_list = []
+        paper_list.extend(
+            search_paper(data['topic'], institution_id=ror_id,
+                         year_start=data['year_start'], year_end=data['year_end'], samples=100))
 
-        # Target university papers
-        paper_list.extend(search_paper(data['topic'], institution_id=ror_id,
-                                       year_start=data['year_start'], year_end=data['year_end'], samples=100))
-
-        # Most relevant institutions + the target university per query
         for query in queries:
             for institution in most_relevant_institutions:
-                paper_list.extend(search_paper(query, institution_id=institution[0],
-                                               year_start=data['year_start'], year_end=data['year_end'], samples=100))
-            paper_list.extend(search_paper(query, institution_id=ror_id,
-                                           year_start=data['year_start'], year_end=data['year_end'], samples=100))
+                papers = search_paper(query, institution_id=institution[0],
+                                      year_start=data['year_start'], year_end=data['year_end'], samples=100)
+                paper_list.extend(papers)
+
+            papers_solo = search_paper(query, institution_id=ror_id,
+                                       year_start=data['year_start'], year_end=data['year_end'], samples=100)
+            paper_list.extend(papers_solo)
 
         paper_list = remove_duplicates_by_doi_dict(paper_list)
-        total_papers_indexed = len(paper_list)
-        yield from emit(f"Indexed {total_papers_indexed} unique papers.")
         index = build_index(paper_list, llm_model=model)
 
-        yield from emit("Retrieving documents across all queries (indexed).")
+        yield from emit(f"📚 Indexed {len(paper_list)} papers.")
+
         all_results = [
             retrieve(query, top_k=10, year_start=data['year_start'], year_end=data['year_end'],
                      country=data['country'], index=index) for query in queries
         ]
-        all_docs = [item for sublist in all_results for item in sublist]
-        all_docs = remove_duplicates_by_doi(all_docs)
-        total_retrieved_docs = len(all_docs)
-        yield from emit(f"Retrieved {total_retrieved_docs} documents across {len(queries)} queries (online mode).")
+        docs = [item for sublist in all_results for item in sublist]
+        docs = remove_duplicates_by_doi(docs)
 
-        yield from emit("🏛 Retrieving top-k documents for the target university...")
+        yield from emit("📑 Getting top documents for the university...")
         single_university_docs_ml = [
             retrieve(query, institution=data['university_name'], top_k=10,
                      year_start=data['year_start'], year_end=data['year_end'], index=index) for query in queries
         ]
 
-        yield from emit("Identifying top comparison universities.")
-        top_universities = extract_top_universities(
-            all_docs, query=prompt, exclude=get_university_name_from_ror(ror_id)
-        )
+        yield from emit("🏫 Extracting top universities...")
+        top_universities = extract_top_universities(docs, query=prompt, exclude=get_university_name_from_ror(ror_id))
 
-        yield from emit("📋 Getting profiles of comparison universities...")
+        yield from emit("📄 Getting profiles of top universities...")
         for institution in most_relevant_institutions:
             inst_profile = get_institution_profile(data['topic'], institution[0],
                                                    queries=queries, year_start=data['year_start'], year_end=data['year_end'])
             profiles.append(inst_profile)
 
-    # ===== Summarization and Comparison =====
-    yield from emit("Summarizing the target university's contributions.")
-    flat_docs = [item for sublist in single_university_docs_ml for item in sublist]
-    university_summary = summarize_university(flat_docs)
-    university_overview = institutional_summary(university_summary, data['university_name'])
+    yield from emit("🧠 Summarizing the target university...")
+    single_university_docs = [item for sublist in single_university_docs_ml for item in sublist]
+    university_summary = summarize_university(single_university_docs)
+    university_over_summary = institutional_summary(university_summary, data['university_name'])
 
-    yield from emit("Summarizing top comparison universities.")
-    top_universities_summary = summarize_universities(top_universities)
-    structured_summary = institutional_summary_structured(top_universities_summary)
+    yield from emit("🧠 Summarizing comparison universities...")
+    top_universities = summarize_universities(top_universities)
+    top_universities = institutional_summary_structured(top_universities)
 
     yield from emit("🆚 Comparing universities...")
-    comparison = compare_universities(structured_summary, university_overview, prompt)
+    comparison = compare_universities(top_universities, university_over_summary, prompt)
     output = fix_output_citations(comparison)
 
-    final_result = {
-        "summary": output,
-        "profiles": profiles,
-        "retrieved_docs_count": total_retrieved_docs,
-        "indexed_papers": total_papers_indexed if online else None,
-        "query_count": len(queries),
-        "mode": "online" if online else "offline"
-    }
-
-    yield f"data: {json.dumps(final_result)}\n\n".encode("utf-8")
+    yield f"data: {json.dumps({'summary': output, 'profiles': profiles})}\n\n".encode("utf-8")
 
 
 
