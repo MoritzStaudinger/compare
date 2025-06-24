@@ -220,7 +220,7 @@ if "last_result" in st.session_state:
         with st.container():
             st.warning(f"⚠️ Results are cached and may not reflect the latest data. "
                        f"Cache timestamp: {result['cache_timestamp']}")
-            if st.button("🔄 Resubmit without cache", key="resubmit_button"):
+            if st.button("🔄 Resubmit without cache", key="resubmit_button_clicked"):
                 resubmit_clicked = True
 
     st.markdown("### Response")

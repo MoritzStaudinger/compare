@@ -14,7 +14,7 @@ from backend.utils.utils import compute_upload_hash, extract_title_abstract_full
 api_bp = Blueprint('api', __name__)
 
 CACHE_DIR = "data/cache"
-CACHE_EXPIRY_DAYS = 7
+CACHE_EXPIRY_DAYS = 20
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 @api_bp.route('/process_input', methods=['POST'])
@@ -235,22 +235,22 @@ def recent_caches():
         glob.glob(os.path.join(CACHE_DIR, "*.json")),
         key=os.path.getmtime,
         reverse=True
-    )[:5]  # Get up to 5 most recent
+    )[:15]  # Get up to 5 most recent
 
     recent = []
     for path in cache_files:
         try:
             with open(path, "r") as f:
                 data = json.load(f)
-                if data.get("file_hash") is not None:
+                if data.get("input", {}).get("file_hash") is not None:
                     continue
-            recent.append({
-                "prompt": data.get("input", {}).get("prompt", "N/A"),
-                "model": data.get("input", {}).get("model", "N/A"),
-                "file_hash": data.get("input", {}).get("file_hash"),
-                "summary": data.get("summary", "")[:250],  # preview
-            })
+                recent.append({
+                    "prompt": data.get("input", {}).get("prompt", "N/A"),
+                    "model": data.get("input", {}).get("model", "N/A"),
+                    "file_hash": data.get("input", {}).get("file_hash"),
+                    "summary": data.get("summary", "")[:250],  # preview
+                })
         except Exception as e:
             continue  # skip broken files
 
-    return jsonify(recent)
+    return jsonify(recent[:5])
