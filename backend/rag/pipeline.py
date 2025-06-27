@@ -6,7 +6,7 @@ from backend.openalex.utils import get_most_relevant_institutions_for_queries, g
 from backend.rag.rag_utils import build_index, generate_questions, retrieve, extract_top_universities, build_index_core, \
     summarize_university, institutional_summary, summarize_universities, institutional_summary_structured, \
     compare_universities, compare_papers, overview, paper_answer, summarize, compare_two_universities, \
-    fix_output_citations
+    fix_output_citations, use_abstracts_universities, use_abstracts_university
 from backend.utils.utils import remove_duplicates_by_doi, remove_duplicates_by_doi_dict
 
 def stream_fn(msg: str):
@@ -94,7 +94,7 @@ def handle_single_university(data, prompt, online, model, top_k=15, stream_fn=No
     yield from emit("Generating summaries.")
     flat_docs = [doc for sublist in all_retrieved_docs for doc in sublist]
 
-    summary = summarize_university(flat_docs)
+    summary = use_abstracts_university(flat_docs) #summarize_university(flat_docs)
     full_summary = institutional_summary(summary, data['university_name'], prompt=prompt)
     fixed_summary = fix_output_citations(full_summary)
 
@@ -223,7 +223,8 @@ def handle_university(data, prompt, online=False, model="gpt-4o-mini", stream_fn
         yield from emit("🌍 Finding relevant institutions...")
         most_relevant_institutions = get_most_relevant_institutions_for_queries(
             queries, year_start=data['year_start'], year_end=data['year_end'],
-            country_code=data['country'], limit=3)
+            country_code=data['country'], limit=3, exclude_ror=ror_id)
+        print("Most relevant institutions:", most_relevant_institutions)
         yield from emit("Create Research Profile")
         profile = get_institution_profile(data['topic'], ror_id, queries=queries,
                                           year_start=data['year_start'], year_end=data['year_end'])
@@ -271,14 +272,15 @@ def handle_university(data, prompt, online=False, model="gpt-4o-mini", stream_fn
             inst_profile = get_institution_profile(data['topic'], institution[0],
                                                    queries=queries, year_start=data['year_start'], year_end=data['year_end'])
             profiles.append(inst_profile)
-
+    print(len(profiles))
+    print(profiles)
     yield from emit("🧠 Summarizing the target university...")
     single_university_docs = [item for sublist in single_university_docs_ml for item in sublist]
-    university_summary = summarize_university(single_university_docs)
+    university_summary = use_abstracts_university(single_university_docs) #summarize_university(single_university_docs)
     university_over_summary = institutional_summary(university_summary, data['university_name'])
 
     yield from emit("🧠 Summarizing comparison universities...")
-    top_universities = summarize_universities(top_universities)
+    top_universities = use_abstracts_universities(top_universities) #summarize_universities(top_universities)
     top_universities = institutional_summary_structured(top_universities)
 
     yield from emit("🆚 Comparing universities...")
@@ -366,12 +368,12 @@ def handle_university_university(data, prompt, top_k=15, online=False, stream_fn
     # ===== Summarization and Comparison =====
     yield from emit(f"Summarizing papers from {data['university_name']}...")
     university_docs = [item for sublist in university_docs_ml for item in sublist]
-    university_summary = summarize_university(university_docs)
+    university_summary = use_abstracts_university(university_docs) #summarize_university(university_docs)
     university_overview = institutional_summary(university_summary, data['university_name'])
 
     yield from emit(f"Summarizing papers from {data['comparison_university_name']}.")
     comparison_docs = [item for sublist in comparison_university_docs_ml for item in sublist]
-    comparison_summary = summarize_university(comparison_docs)
+    comparison_summary = use_abstracts_university(comparison_docs) #summarize_university(comparison_docs)
     comparison_overview = institutional_summary(comparison_summary, data['comparison_university_name'])
 
     yield from emit("Comparing both universities.")

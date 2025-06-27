@@ -312,41 +312,59 @@ def summarize(documents):
 
 from collections import defaultdict, Counter
 
-def extract_top_universities(docs, query, exclude=None, current_year=2025, top_k_institutions=3, top_docs_per_inst=15, country_code = None):
+def extract_top_universities(
+    docs,
+    query,
+    exclude=None,
+    current_year=2025,
+    top_k_institutions=3,
+    top_docs_per_inst=15,
+    country_code=None
+):
     """
     Analyze retrieved documents and extract top contributing universities.
 
     Args:
         docs (list): List of retrieved document objects, each with .text and .metadata
         query (str): The comparison query
+        exclude (list or str): Institutions to exclude
         current_year (int): The current year for filtering
         top_k_institutions (int): Number of top institutions to select
         top_docs_per_inst (int): Number of top documents per institution
+        country_code (str): Optional country code to filter institutions
 
     Returns:
         dict: Structured output with top institutions, publication counts, and top documents
     """
     cutoff_year = current_year - 5
 
-    # Step 1: Filter relevant documents
-
-    filtered_docs = docs #[doc for doc in docs if is_relevant(doc)]
+    # Step 1: Filter relevant documents (you can add is_relevant logic if needed)
+    filtered_docs = docs
 
     # Step 2: Count publications per institution
     institution_counter = Counter()
     inst_to_docs = defaultdict(list)
 
     exclude_set = set([exclude]) if isinstance(exclude, str) else set(exclude or [])
-    print(docs[0].metadata)
+
     for doc in filtered_docs:
         institutions = doc.metadata.get("affiliations", [])
-        for inst in institutions:
+        countries = doc.metadata.get("countries", [])
+
+        for inst, country in zip(institutions, countries):
             inst_s = inst.strip()
-            if inst_s not in exclude_set:
-                institution_counter[inst_s] += 1
-                inst_to_docs[inst_s].append(doc)
+            country_s = (country or "").strip().upper()
+
+            if inst_s in exclude_set:
+                continue
+
+            if country_code and country_s != country_code.upper():
+                continue
+
+            institution_counter[inst_s] += 1
+            inst_to_docs[inst_s].append(doc)
+
     top_institutions = [inst for inst, _ in institution_counter.most_common(top_k_institutions)]
-    print(top_institutions)
 
     # Step 3: Score and rank documents per institution
     embed_model = OpenAIEmbedding()
@@ -368,7 +386,6 @@ def extract_top_universities(docs, query, exclude=None, current_year=2025, top_k
         }
 
     return structured_output
-
 
 def overview(summaries, prompt):
     comparison_context = ""
@@ -675,6 +692,37 @@ def fix_output_citations(input):
     )
     fixing_response = Settings.llm.complete(fixing_prompt).text
     return fixing_response
+
+
+def use_abstracts_universities(structured_institution):
+    for institution, data in structured_institution.items():
+        top_docs = data["top_documents"]
+        summaries = use_abstracts_as_summaries(top_docs)
+        data["summary"] = summaries
+    return structured_institution
+
+def use_abstracts_university(docs):
+    return use_abstracts_as_summaries(docs)
+
+def use_abstracts_as_summaries(documents):
+    summaries = []
+    for i, node in enumerate(documents, start=1):
+        meta = getattr(node, "metadata", {})
+        title = meta.get("title", f"Document {i}")
+        abstract = meta.get("abstract", "")
+        authors = meta.get("authors", "Unknown authors")
+        doi = meta.get("doi", meta.get("DOI", ""))
+        publication_year = meta.get("publication_year", "")
+
+        summaries.append({
+            "index": i,
+            "title": title,
+            "authors": authors,
+            "year": publication_year,
+            "doi": doi,
+            "summary": abstract  # Use abstract directly
+        })
+    return summaries
 
 #static_index = build_index("data/works.json")
 #retriever = static_index.as_retriever(similarity_top_k=5)

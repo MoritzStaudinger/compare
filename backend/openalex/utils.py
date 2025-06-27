@@ -1,8 +1,12 @@
+import urllib
+
+import requests
 from pyalex import Works, Institutions
 import pyalex
 
 from collections import Counter, defaultdict
 
+from requests import RequestException
 from sentence_transformers import SentenceTransformer
 from sklearn.cluster import KMeans
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -40,11 +44,12 @@ def get_most_relevant_institutions_for_query(query, year_start=None, year_end=No
     # Limit the number of institutions returned
     return filtered_grouped_results[:limit]
 
-def get_most_relevant_institutions_for_queries(queries, year_start=None, year_end=None, country_code=None, limit=10, filter_institution=None):
+def get_most_relevant_institutions_for_queries(queries, year_start=None, year_end=None, country_code=None, limit=10, exclude_ror=None):
     from_date = f"{year_start}-01-01" if year_start else "1970-01-01"
     to_date = f"{year_end}-12-31" if year_end else "2025-12-31"
 
     institution_counts = {}
+
     for query in queries:
         works_query = Works().search(query).filter(
             is_oa=True,
@@ -57,31 +62,17 @@ def get_most_relevant_institutions_for_queries(queries, year_start=None, year_en
         if country_code:
             works_query = works_query.filter(institutions={"country_code": country_code.upper()})
 
-        # Group by institution ROR ID and retrieve results
-        grouped_results = works_query.group_by("institutions.ror").get()[:limit*2]
-        # Optional post-filtering by country (if not reliably handled server-side)
-        if country_code:
-            def is_in_country(ror_id, target_code):
-                _, inst = Institutions().get(ror_id)  # Unpack status code and response
-                return inst.get('country_code', '').upper() == target_code.upper()
-
-            grouped_results = [res for res in grouped_results if is_in_country(res['key'], country_code)]
-
-        # Optional filtering by specific institution ROR ID
-        if filter_institution:
-            grouped_results = [res for res in grouped_results if res['key'] != filter_institution]
+        grouped_results = works_query.group_by("institutions.ror").get()
 
         for result in grouped_results:
             ror_id = result['key']
+            if exclude_ror and ror_id == exclude_ror:
+                continue
             count = result['count']
             institution_counts[ror_id] = institution_counts.get(ror_id, 0) + count
 
     # Sort by count descending and return top results
     sorted_results = sorted(institution_counts.items(), key=lambda x: x[1], reverse=True)
-    print(sorted_results[:limit])
-    return sorted_results[:limit]
-
-
     return sorted_results[:limit]
 
 def structure_data(data):
@@ -306,9 +297,9 @@ def get_institution_profile(topic, ror_id, queries=[], year_start=None, year_end
     }
 
 
-
 def group_by_year(papers):
     """
+
     Group papers by publication year and count the number per year.
     Expects structured papers (e.g., from `structure_data` output).
     """

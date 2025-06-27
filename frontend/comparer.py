@@ -78,8 +78,8 @@ st.title("Compare Research Papers and Institutions")
 def show_recent_queries():
     with st.expander("🕘 Recent Queries (click to expand)", expanded=False):
         try:
-            response = requests.get("http://backend:8000/api/recent_caches")
-            #response = requests.get("http://localhost:8000/api/recent_caches")
+            #response = requests.get("http://backend:8000/api/recent_caches")
+            response = requests.get("http://localhost:8000/api/recent_caches")
             if response.status_code == 200:
                 entries = response.json()
                 if entries:
@@ -111,8 +111,8 @@ def stream_backend(prompt, model, pdf_file, no_cache=False):
     }
 
     response = requests.post(
-        "http://backend:8000/api/process_input_stream",
-        #"http://localhost:8000/api/process_input_stream",
+        #"http://backend:8000/api/process_input_stream",
+        "http://localhost:8000/api/process_input_stream",
         files=files,
         data=data,
         stream=True,
@@ -381,8 +381,8 @@ if "last_result" in st.session_state:
             }
 
             try:
-                feedback_response = requests.post("http://backend:8000/api/feedback", json=feedback_payload)
-                #feedback_response = requests.post("http://localhost:8000/api/feedback", json=feedback_payload)
+                #feedback_response = requests.post("http://backend:8000/api/feedback", json=feedback_payload)
+                feedback_response = requests.post("http://localhost:8000/api/feedback", json=feedback_payload)
                 if feedback_response.status_code == 200:
                     st.success("Thank you! Your feedback was saved.")
                 else:
