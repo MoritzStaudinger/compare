@@ -61,7 +61,7 @@ def build_index_core(
     # Build and return the vector index
     index = VectorStoreIndex([])
 
-    all_documents = data_input  # Replace with your list of Document objects
+    all_documents = data_input
 
     # Initialize the text splitter
     text_splitter = TokenTextSplitter(chunk_size=1000, chunk_overlap=200)

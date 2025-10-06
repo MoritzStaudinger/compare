@@ -424,7 +424,7 @@ def handle_comparison(data, prompt, paper, online=False, fulltext=False, top_k=3
     mode = "offline"
 
     if online and fulltext:
-        mode = "online-fulltext"
+        #mode = "online-fulltext"
         yield from emit("Loading full-text documents for topic, paper, and queries.")
         loader = CoreReader()
         full_docs = []
